@@ -2,13 +2,14 @@
 
 use std::net::TcpListener;
 
-use sqlx::{MySql, MySqlPool, Pool};
+use sqlx::{Executor, MySql, MySqlPool, Pool};
+use uuid::Uuid;
 // `tokio::test`是`tokio::main`的测试等价物
 // 它还使你不必制定`#[test]`属性
 //
 // 可以使用一下命令检查生成了哪些代码
 // `cargo expand --test health_check`
-use zero2prod::configuration::get_configuration;
+use zero2prod::configuration::{get_configuration, DatabaseSettings};
 use zero2prod::startup::run;
 
 pub struct TestApp {
@@ -21,10 +22,10 @@ async fn spawn_app() -> TestApp {
     let port = listener.local_addr().unwrap().port();
     let address = format!("http://127.0.0.1:{}", port);
 
-    let configuration = get_configuration().expect("Failed to read configuration.");
-    let connection = MySqlPool::connect(&configuration.database.connection_string())
-        .await
-        .expect("Failed to connect to database.");
+    let mut configuration = get_configuration().expect("Failed to read configuration.");
+    configuration.database.database = format!("test_{}", Uuid::new_v4().as_simple().to_string());
+
+    let connection = configure_database(&configuration.database).await;
 
     let server = run(listener, connection.clone()).expect("Failed to bind address");
 
@@ -34,6 +35,28 @@ async fn spawn_app() -> TestApp {
         address,
         db_pool: connection,
     }
+}
+
+pub async fn configure_database(config: &DatabaseSettings) -> Pool<MySql> {
+    let connection = MySqlPool::connect(&config.connection_string_without_db())
+        .await
+        .expect("Failed to connect to database.");
+
+    connection
+        .execute(format!(r#"CREATE DATABASE IF NOT EXISTS {}"#, config.database).as_str())
+        .await
+        .expect("Failed to create database");
+
+    let connection = MySqlPool::connect(&config.connection_string())
+        .await
+        .expect("Failed to connect to database");
+
+    sqlx::migrate!("./migrations")
+        .run(&connection)
+        .await
+        .expect("Failed to migrate the database");
+
+    connection
 }
 
 #[tokio::test]
