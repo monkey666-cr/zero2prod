@@ -1,4 +1,4 @@
-use actix_web::{dev::Server, web, App, HttpResponse, HttpServer};
+use actix_web::{dev::Server, middleware::Logger, web, App, HttpResponse, HttpServer};
 use sqlx::{MySql, Pool};
 use std::net::TcpListener;
 
@@ -8,6 +8,7 @@ pub fn run(listener: TcpListener, connection: Pool<MySql>) -> Result<Server, std
     let connection = web::Data::new(connection);
     let server = HttpServer::new(move || {
         App::new()
+            .wrap(Logger::default())
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .route(
