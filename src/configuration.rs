@@ -1,3 +1,5 @@
+use secrecy::{ExposeSecret, SecretBox, SecretString};
+
 #[derive(serde::Deserialize)]
 pub struct Settings {
     pub database: DatabaseSettings,
@@ -7,25 +9,32 @@ pub struct Settings {
 #[derive(serde::Deserialize)]
 pub struct DatabaseSettings {
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub port: u16,
     pub host: String,
     pub database: String,
 }
 
 impl DatabaseSettings {
-    pub fn connection_string(&self) -> String {
-        format!(
+    pub fn connection_string(&self) -> SecretBox<String> {
+        SecretBox::new(Box::new(format!(
             "mysql://{}:{}@{}:{}/{}",
-            self.username, self.password, self.host, self.port, self.database
-        )
+            self.username,
+            self.password.expose_secret(),
+            self.host,
+            self.port,
+            self.database
+        )))
     }
 
-    pub fn connection_string_without_db(&self) -> String {
-        format!(
+    pub fn connection_string_without_db(&self) -> SecretBox<String> {
+        SecretBox::new(Box::new(format!(
             "mysql://{}:{}@{}:{}",
-            self.username, self.password, self.host, self.port
-        )
+            self.username,
+            self.password.expose_secret(),
+            self.host,
+            self.port
+        )))
     }
 }
 
