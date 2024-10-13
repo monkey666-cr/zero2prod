@@ -1,15 +1,23 @@
 use secrecy::{ExposeSecret, SecretBox, SecretString};
+use sqlx::mysql::MySqlConnectOptions;
 
-use crate::domain::SubscriberEmail;
+use crate::{domain::SubscriberEmail, email_client::EmailClient};
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct Settings {
     pub database: DatabaseSettings,
-    pub application_port: u16,
+    pub application: ApplicationSettings,
     pub email_client: EmailClientSettings,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
+pub struct ApplicationSettings {
+    pub port: u16,
+    pub host: String,
+    pub base_url: String,
+}
+
+#[derive(serde::Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,
     pub password: SecretString,
@@ -19,6 +27,15 @@ pub struct DatabaseSettings {
 }
 
 impl DatabaseSettings {
+    pub fn connect_options(&self) -> MySqlConnectOptions {
+        MySqlConnectOptions::new()
+            .host(&self.host)
+            .username(&self.username)
+            .password(self.password.expose_secret())
+            .port(self.port)
+            .database(&self.database)
+    }
+
     pub fn connection_string(&self) -> SecretBox<String> {
         SecretBox::new(Box::new(format!(
             "mysql://{}:{}@{}:{}/{}",
@@ -52,7 +69,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     settings.try_deserialize::<Settings>()
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
@@ -62,5 +79,11 @@ pub struct EmailClientSettings {
 impl EmailClientSettings {
     pub fn sender(&self) -> Result<SubscriberEmail, String> {
         SubscriberEmail::parse(self.sender_email.clone())
+    }
+
+    pub fn client(self) -> EmailClient {
+        let sender_email = self.sender().expect("Invalid sender email address");
+
+        EmailClient::new(self.base_url, sender_email, self.token)
     }
 }

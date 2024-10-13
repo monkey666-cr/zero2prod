@@ -1,35 +1,48 @@
-use std::net::TcpListener;
+use std::fmt::{Debug, Display};
+use tokio::task::JoinError;
 
-use secrecy::ExposeSecret;
-use sqlx::MySqlPool;
-
-use zero2prod::email_client::EmailClient;
+use zero2prod::configuration::get_configuration;
+use zero2prod::startup::Application;
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
-use zero2prod::{configuration::get_configuration, startup::run};
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     let subscriber = get_subscriber("zero2prod".into(), "info".into(), std::io::stdout);
     init_subscriber(subscriber);
 
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let connection =
-        MySqlPool::connect(&configuration.database.connection_string().expose_secret())
-            .await
-            .expect("Failed to connect to database.");
 
-    let sender_email = configuration
-        .email_client
-        .sender()
-        .expect("Invalid sender email address");
-    let email_client = EmailClient::new(
-        configuration.email_client.base_url,
-        sender_email,
-        configuration.email_client.token,
-    );
+    let application = Application::build(configuration.clone()).await?;
 
-    let address = format!("127.0.0.1:{}", configuration.application_port);
-    let listener = TcpListener::bind(&address).expect("Failed to bind to address");
+    let application_task = tokio::spawn(application.run_until_stopped());
 
-    run(listener, connection, email_client)?.await
+    tokio::select! {
+        o = application_task => report_exit("API", o),
+    }
+
+    Ok(())
+}
+
+fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>, JoinError>) {
+    match outcome {
+        Ok(Ok(())) => {
+            tracing::info!("{} has exited", task_name)
+        }
+        Ok(Err(e)) => {
+            tracing::error!(
+                error.cause_chain = ?e,
+                error.message = %e,
+                "{} failed",
+                task_name
+            )
+        }
+        Err(e) => {
+            tracing::error!(
+                error.cause_chain = ?e,
+                error.message = %e,
+                "{}' task failed to complete",
+                task_name
+            )
+        }
+    }
 }

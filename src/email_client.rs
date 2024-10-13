@@ -1,8 +1,6 @@
-use std::borrow::Borrow;
-
 use lettre::{
     message::header::ContentType,
-    transport::smtp::{authentication::Credentials, client::Tls, response::Response, Error},
+    transport::smtp::{authentication::Credentials, response::Response, Error},
     Message, SmtpTransport, Transport,
 };
 

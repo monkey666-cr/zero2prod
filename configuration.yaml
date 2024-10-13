@@ -1,4 +1,3 @@
-application_port: 8080
 database:
   host: "localhost"
   port: 3306
@@ -9,3 +8,7 @@ email_client:
   base_url: "smtp.163.com"
   sender_email: "17610780919@163.com"
   token: QMveC3B6DD8zuJJN
+application:
+  host: "0.0.0.0"
+  port: 8080
+  base_url: "/zero2prod"
