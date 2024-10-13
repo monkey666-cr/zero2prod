@@ -12,6 +12,7 @@ use uuid::Uuid;
 // 可以使用一下命令检查生成了哪些代码
 // `cargo expand --test health_check`
 use zero2prod::configuration::{get_configuration, DatabaseSettings};
+use zero2prod::email_client::EmailClient;
 use zero2prod::startup::run;
 use zero2prod::telemetry::{get_subscriber, init_subscriber};
 
@@ -44,8 +45,17 @@ async fn spawn_app() -> TestApp {
     configuration.database.database = format!("test_{}", Uuid::new_v4().as_simple().to_string());
 
     let connection = configure_database(&configuration.database).await;
+    let sender_email = configuration
+        .email_client
+        .sender()
+        .expect("Invalid sender email address.");
+    let email_client = EmailClient::new(
+        configuration.email_client.base_url,
+        sender_email,
+        configuration.email_client.token,
+    );
 
-    let server = run(listener, connection.clone()).expect("Failed to bind address");
+    let server = run(listener, connection.clone(), email_client).expect("Failed to bind address");
 
     let _ = tokio::spawn(server);
 
@@ -174,7 +184,7 @@ async fn subscribe_return_a_200_when_fields_are_present_but_empty() {
             .expect("Failed to execute request.");
 
         assert_eq!(
-            200,
+            400,
             response.status().as_u16(),
             "The API did not return a 200 OK when the payload was {}",
             message

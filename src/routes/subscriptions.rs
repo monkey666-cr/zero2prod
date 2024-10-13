@@ -1,4 +1,7 @@
-use crate::domain::{NewSubscriber, SubscriberEmail, SubscriberName};
+use crate::{
+    domain::{NewSubscriber, SubscriberEmail, SubscriberName},
+    email_client::EmailClient,
+};
 use actix_web::{http::StatusCode, web, HttpResponse, ResponseError};
 use chrono::Utc;
 use sqlx::{MySql, Pool};
@@ -71,7 +74,7 @@ pub async fn insert_subscriber(
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(form, pool),
+    skip(form, pool, email_client),
     fields(
         subscribe_email = %form.email,
         subscribe_name = %form.name
@@ -80,12 +83,25 @@ pub async fn insert_subscriber(
 pub async fn subscribe(
     form: web::Form<FormData>,
     pool: web::Data<Pool<MySql>>,
+    email_client: web::Data<EmailClient>,
 ) -> Result<HttpResponse, SubscribeError> {
-    let new_subscriber = form.0.try_into().map_err(SubscribeError::ValidationError)?;
+    let new_subscriber: NewSubscriber =
+        form.0.try_into().map_err(SubscribeError::ValidationError)?;
 
-    match insert_subscriber(&pool, &new_subscriber).await {
-        Ok(_) => Ok(HttpResponse::Ok().finish()),
-        Err(_) => Ok(HttpResponse::InternalServerError().finish()),
+    // 测试邮件发送
+    let res = email_client
+        .send_email(&new_subscriber.email, "test", "<h1>Hello</h1>", "")
+        .await;
+
+    match res {
+        Ok(_) => match insert_subscriber(&pool, &new_subscriber).await {
+            Ok(_) => Ok(HttpResponse::Ok().finish()),
+            Err(_) => Ok(HttpResponse::InternalServerError().finish()),
+        },
+        Err(_) => {
+            println!("{:?}", res);
+            Ok(HttpResponse::InternalServerError().finish())
+        }
     }
 }
 

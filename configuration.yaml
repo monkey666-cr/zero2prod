@@ -5,3 +5,7 @@ database:
   username: "root"
   password: "123456"
   database: "zero2prod"
+email_client:
+  base_url: "smtp.163.com"
+  sender_email: "17610780919@163.com"
+  token: QMveC3B6DD8zuJJN
