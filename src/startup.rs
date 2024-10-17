@@ -12,6 +12,7 @@ use crate::{
 pub struct Application {
     port: u16,
     server: Server,
+    pub email_client: EmailClient,
 }
 
 impl Application {
@@ -26,9 +27,14 @@ impl Application {
         );
         let listener = TcpListener::bind(&address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, connection_pool, email_client).await?;
 
-        Ok(Self { port, server })
+        let server = run(listener, connection_pool, email_client.clone()).await?;
+
+        Ok(Self {
+            port,
+            server,
+            email_client,
+        })
     }
 
     pub fn port(&self) -> u16 {

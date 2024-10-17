@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use secrecy::ExposeSecret;
 use sqlx::{Executor, MySql, MySqlPool, Pool};
 use uuid::Uuid;
+use zero2prod::email_client::MockSmtpTransport;
 use zero2prod::{
     configuration::{get_configuration, DatabaseSettings},
     startup::{get_connection_pool, Application},
@@ -42,9 +43,15 @@ pub async fn spawn_app() -> TestApp {
     // 创建并且配置数据库
     configure_database(&configuration.database).await;
 
-    let application = Application::build(configuration.clone())
+    let mut application = Application::build(configuration.clone())
         .await
         .expect("Failed to build application.");
+
+    let mailer_mock = MockSmtpTransport {};
+
+    let transport = Box::new(mailer_mock);
+
+    application.email_client.set_transport(transport);
 
     let application_port = application.port();
     let _ = tokio::spawn(application.run_until_stopped());
