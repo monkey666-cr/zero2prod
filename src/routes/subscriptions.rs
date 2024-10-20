@@ -57,7 +57,7 @@ pub async fn insert_subscriber(
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
         r#"
-    INSERT INTO subscriptions (email, name, subscribed_at) VALUES ( ?, ?, ? )"#,
+    INSERT INTO subscriptions (email, name, subscribed_at, status) VALUES ( ?, ?, ?, 'confirmed' )"#,
         new_subscriber.email.as_ref(),
         new_subscriber.name.as_ref(),
         Utc::now(),
@@ -74,7 +74,7 @@ pub async fn insert_subscriber(
 
 #[tracing::instrument(
     name = "Adding a new subscriber",
-    skip(form, pool, email_client),
+    skip(form, pool, _email_client),
     fields(
         subscribe_email = %form.email,
         subscribe_name = %form.name
@@ -83,25 +83,14 @@ pub async fn insert_subscriber(
 pub async fn subscribe(
     form: web::Form<FormData>,
     pool: web::Data<Pool<MySql>>,
-    email_client: web::Data<EmailClient>,
+    _email_client: web::Data<EmailClient>,
 ) -> Result<HttpResponse, SubscribeError> {
     let new_subscriber: NewSubscriber =
         form.0.try_into().map_err(SubscribeError::ValidationError)?;
 
-    // 测试邮件发送
-    let res = email_client
-        .send_email(&new_subscriber.email, "test", "<h1>Hello</h1>", "")
-        .await;
-
-    match res {
-        Ok(_) => match insert_subscriber(&pool, &new_subscriber).await {
-            Ok(_) => Ok(HttpResponse::Ok().finish()),
-            Err(_) => Ok(HttpResponse::InternalServerError().finish()),
-        },
-        Err(_) => {
-            println!("{:?}", res);
-            Ok(HttpResponse::InternalServerError().finish())
-        }
+    match insert_subscriber(&pool, &new_subscriber).await {
+        Ok(_) => Ok(HttpResponse::Ok().finish()),
+        Err(_) => Ok(HttpResponse::InternalServerError().finish()),
     }
 }
 

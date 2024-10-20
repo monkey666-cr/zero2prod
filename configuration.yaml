@@ -5,9 +5,10 @@ database:
   password: "123456"
   database: "zero2prod"
 email_client:
-  base_url: "smtp.163.com"
-  sender_email: "17610780919@163.com"
-  token: QMveC3B6DD8zuJJN
+  base_url: "localhost"
+  sender_email: "test@gmail.com"
+  authorization_token: "my-secret-token"
+  timeout_milliseconds: 10000
 application:
   host: "0.0.0.0"
   port: 8080

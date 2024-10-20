@@ -1,4 +1,5 @@
 use secrecy::{ExposeSecret, SecretBox, SecretString};
+use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::mysql::MySqlConnectOptions;
 
 use crate::{domain::SubscriberEmail, email_client::EmailClient};
@@ -73,7 +74,9 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
 pub struct EmailClientSettings {
     pub base_url: String,
     pub sender_email: String,
-    pub token: String,
+    pub authorization_token: SecretString,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub timeout_milliseconds: u64,
 }
 
 impl EmailClientSettings {
@@ -81,9 +84,19 @@ impl EmailClientSettings {
         SubscriberEmail::parse(self.sender_email.clone())
     }
 
+    pub fn timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.timeout_milliseconds)
+    }
+
     pub fn client(self) -> EmailClient {
         let sender_email = self.sender().expect("Invalid sender email address");
+        let timeout = self.timeout();
 
-        EmailClient::new(self.base_url, sender_email, self.token)
+        EmailClient::new(
+            self.base_url,
+            sender_email,
+            self.authorization_token,
+            timeout,
+        )
     }
 }
