@@ -59,10 +59,88 @@ impl EmailClient {
 }
 
 #[derive(serde::Serialize)]
+#[serde(rename_all = "PascalCase")]
 struct SendEmailRequest<'a> {
     from: &'a str,
     to: &'a str,
     subject: &'a str,
     html_body: &'a str,
     text_body: &'a str,
+}
+
+#[cfg(test)]
+mod tests {
+    use fake::faker::internet::en::SafeEmail;
+    use fake::faker::lorem::en::{Paragraph, Sentence};
+    use fake::{Fake, Faker};
+
+    use secrecy::SecretString;
+    use wiremock::matchers::{header, header_exists, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use crate::domain::SubscriberEmail;
+
+    use super::EmailClient;
+
+    struct SendEmailBodyMatcher;
+
+    impl wiremock::Match for SendEmailBodyMatcher {
+        fn matches(&self, request: &wiremock::Request) -> bool {
+            let result: Result<serde_json::Value, _> = serde_json::from_slice(&request.body);
+            if let Ok(body) = result {
+                // 调试, 查看请求体内容
+                // dbg!(&body);
+                body.get("From").is_some()
+                    && body.get("To").is_some()
+                    && body.get("Subject").is_some()
+                    && body.get("HtmlBody").is_some()
+                    && body.get("TextBody").is_some()
+            } else {
+                false
+            }
+        }
+    }
+
+    /// Generate a random email subject
+    fn subject() -> String {
+        Sentence(1..2).fake()
+    }
+
+    /// Generate a random email content
+    fn content() -> String {
+        Paragraph(1..10).fake()
+    }
+
+    fn email() -> SubscriberEmail {
+        SubscriberEmail::parse(SafeEmail().fake()).unwrap()
+    }
+
+    fn email_client(base_url: String) -> EmailClient {
+        EmailClient::new(
+            base_url,
+            email(),
+            SecretString::new(Faker.fake::<String>().into()),
+            std::time::Duration::from_millis(200),
+        )
+    }
+
+    #[tokio::test]
+    async fn send_email_sends_the_expected_request() {
+        let mock_server = MockServer::start().await;
+        let email_client = email_client(mock_server.uri());
+
+        Mock::given(header_exists("X-Postmark-Server-Token"))
+            .and(header("Content-Type", "application/json"))
+            .and(path("/email"))
+            .and(method("POST"))
+            .and(SendEmailBodyMatcher)
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        _ = email_client
+            .send_email(email(), &subject(), &content(), &content())
+            .await;
+    }
 }
