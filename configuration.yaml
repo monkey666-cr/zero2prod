@@ -12,4 +12,4 @@ email_client:
 application:
   host: "0.0.0.0"
   port: 8080
-  base_url: "/zero2prod"
+  base_url: "http://127.0.0.1"

@@ -28,7 +28,13 @@ impl Application {
         let listener = TcpListener::bind(&address)?;
         let port = listener.local_addr().unwrap().port();
 
-        let server = run(listener, connection_pool, email_client.clone()).await?;
+        let server = run(
+            listener,
+            connection_pool,
+            email_client.clone(),
+            configuration.application.base_url,
+        )
+        .await?;
 
         Ok(Self {
             port,
@@ -50,13 +56,17 @@ pub fn get_connection_pool(configuration: &DatabaseSettings) -> Pool<MySql> {
     MySqlPool::connect_lazy_with(configuration.connect_options())
 }
 
+pub struct ApplicationBaseUrl(pub String);
+
 pub async fn run(
     listener: TcpListener,
     connection: Pool<MySql>,
     email_client: EmailClient,
+    base_url: String,
 ) -> Result<Server, anyhow::Error> {
     let connection = web::Data::new(connection);
     let email_client = web::Data::new(email_client);
+    let base_url = web::Data::new(ApplicationBaseUrl(base_url));
     let server = HttpServer::new(move || {
         App::new()
             .wrap(TracingLogger::default())
@@ -68,6 +78,7 @@ pub async fn run(
             )
             .app_data(connection.clone())
             .app_data(email_client.clone())
+            .app_data(base_url.clone())
     })
     .listen(listener)?
     .run();

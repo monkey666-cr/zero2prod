@@ -1,3 +1,8 @@
+use wiremock::{
+    matchers::{method, path},
+    Mock, ResponseTemplate,
+};
+
 use crate::helpers::spawn_app;
 
 #[tokio::test]
@@ -5,6 +10,12 @@ async fn subscribe_returns_a_200_for_valid_form_data() {
     let app = spawn_app().await;
 
     let body = "name=lewis&email=lewis@example.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
 
     let response = app.post_subscriptions(body.into()).await;
 
@@ -62,4 +73,38 @@ async fn subscribe_return_a_200_when_fields_are_present_but_empty() {
             message
         );
     }
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_for_valid_subscriptions() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula@guin.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
+}
+
+#[tokio::test]
+async fn subscribe_sends_a_confirmation_email_with_a_link() {
+    let app = spawn_app().await;
+    let body = "name=le%20guin&email=ursula@guin.com";
+
+    Mock::given(path("/email"))
+        .and(method("POST"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&app.email_server)
+        .await;
+
+    app.post_subscriptions(body.into()).await;
+
+    let email_request = &app.email_server.received_requests().await.unwrap()[0];
+    let confirmation_links = app.get_confirmation_links(email_request);
+
+    assert_eq!(confirmation_links.html, confirmation_links.plain_text);
 }
