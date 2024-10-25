@@ -4,6 +4,7 @@ use crate::{
     startup::ApplicationBaseUrl,
 };
 use actix_web::{http::StatusCode, web, HttpResponse, ResponseError};
+use anyhow::Context;
 use chrono::{Duration, Utc};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sqlx::{Executor, MySql, Pool, Transaction};
@@ -91,40 +92,31 @@ pub async fn subscribe(
         form.0.try_into().map_err(SubscribeError::ValidationError)?;
 
     // 开启事务
-    let mut transaction = match pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
-    };
+    let mut transaction = pool
+        .begin()
+        .await
+        .context("Failed to acquire a Mysql connection from the pool")?;
 
-    let subscription_id = match insert_subscriber(&mut transaction, &new_subscriber).await {
-        Ok(subscription_id) => subscription_id,
-        Err(_) => return Ok(HttpResponse::InternalServerError().finish()),
-    };
+    let subscription_id = insert_subscriber(&mut transaction, &new_subscriber)
+        .await
+        .context("Failed to insert new subscriber")?;
 
     let subscription_token = generate_a_random_string();
 
-    if store_token(&mut transaction, subscription_id, &subscription_token)
+    store_token(&mut transaction, subscription_id, &subscription_token)
         .await
-        .is_err()
-    {
-        return Ok(HttpResponse::InternalServerError().finish());
-    }
+        .context("Failed to store the confirmation token for a new subscriber")?;
 
-    if transaction.commit().await.is_err() {
-        return Ok(HttpResponse::InternalServerError().finish());
-    }
+    transaction.commit().await.context("Failed to commit transaction to store a new subscriber.")?;
 
-    if send_confirmation_email(
+    send_confirmation_email(
         &email_client,
         new_subscriber,
         &base_url.0,
         &subscription_token,
     )
     .await
-    .is_err()
-    {
-        return Ok(HttpResponse::InternalServerError().finish());
-    }
+    .context("Failed to send a confirmation email")?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -137,7 +129,7 @@ async fn store_token(
     transaction: &mut Transaction<'_, MySql>,
     subscription_id: u64,
     token: &str,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreTokenError> {
     let query = sqlx::query!(
         r#"
     INSERT INTO subscription_tokens ( subscription_id, token, expires_at ) VALUES ( ?, ?, ? )"#,
@@ -146,12 +138,32 @@ async fn store_token(
         Utc::now() + Duration::minutes(5),
     );
 
-    transaction.execute(query).await.map_err(|e| {
-        tracing::error!("Failed to execute query: {:?}", e);
-        e
-    })?;
+    transaction.execute(query).await.map_err(StoreTokenError)?;
 
     Ok(())
+}
+
+pub struct StoreTokenError(sqlx::Error);
+
+impl std::error::Error for StoreTokenError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+impl std::fmt::Debug for StoreTokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
+}
+
+impl std::fmt::Display for StoreTokenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "A database error was encountered while trying to store a subscription token."
+        )
+    }
 }
 
 fn generate_a_random_string() -> String {
