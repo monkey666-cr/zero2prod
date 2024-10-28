@@ -1,4 +1,7 @@
-use crate::configuration::{DatabaseSettings, Settings};
+use crate::{
+    configuration::{DatabaseSettings, Settings},
+    routes::publish_newsletter,
+};
 use actix_web::{dev::Server, web, App, HttpResponse, HttpServer};
 use sqlx::{MySql, MySqlPool, Pool};
 use std::net::TcpListener;
@@ -73,6 +76,7 @@ pub async fn run(
             .route("/health_check", web::get().to(health_check))
             .route("/subscriptions", web::post().to(subscribe))
             .route("/subscriptions/confirm", web::get().to(confirm))
+            .route("/newsletters", web::post().to(publish_newsletter))
             .route(
                 "/",
                 web::get().to(|| async { HttpResponse::Ok().body("Hello, world!") }),
